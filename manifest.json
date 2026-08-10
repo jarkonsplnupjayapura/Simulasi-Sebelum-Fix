@@ -1,0 +1,15 @@
+{
+  "name": "NUMBAY",
+  "short_name": "NUMBAY",
+  "description": "Aplikasi absensi & pelaporan petugas lapangan PLN UP3 Jayapura",
+  "start_url": "./petugas.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0B1F3A",
+  "theme_color": "#0B1F3A",
+  "icons": [
+    { "src": "icon-numbay-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-numbay-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" }
+  ]
+}
