@@ -1148,6 +1148,10 @@ td.truncate  { max-width: 160px; overflow: hidden; text-overflow: ellipsis; whit
       <a class="nav-item" id="nav-absensi" href="#" title="Monitoring Absensi (Live)" onclick="switchView('absensi');return false;">
         <span class="nav-icon">📍</span> <span class="nav-label">Monitoring Absensi (Live)</span>
       </a>
+      <a class="nav-item" id="nav-live" href="#" title="Live Video Pelaksana" onclick="switchView('live');return false;" style="display:none">
+        <span class="nav-icon">🎥</span> <span class="nav-label">Live Video Pelaksana</span>
+        <span class="nav-badge" id="nav-badge-live" style="background:var(--crit);display:none">0</span>
+      </a>
       <a class="nav-item" id="nav-log-absensi" href="#" title="Riwayat & Durasi Kerja" onclick="switchView('log-absensi');return false;">
         <span class="nav-icon">🕒</span> <span class="nav-label">Riwayat &amp; Durasi Kerja</span>
       </a>
@@ -1470,6 +1474,26 @@ td.truncate  { max-width: 160px; overflow: hidden; text-overflow: ellipsis; whit
           </div>
         </div>
       </div>
+    </div>
+
+    <!-- ══ LIVE VIDEO PELAKSANA VIEW ══ -->
+    <div id="viewLive" style="display:none;" class="firebase-view">
+      <div class="fb-header">
+        <div>
+          <div class="card-title" style="font-size:16px">🎥 Live Video Pelaksana</div>
+          <div class="fb-subtitle">Video call langsung dari HP pelaksana yang sedang mengaktifkan Live · khusus akun UP3, banyak pelaksana bisa tampil bersamaan seperti grid Zoom</div>
+          <div class="fb-info-chips">
+            <span class="info-chip" title="Koneksi peer-to-peer langsung dari HP pelaksana ke browser ini, tidak lewat server relay">ℹ️ Koneksi langsung (WebRTC)</span>
+            <span class="info-chip" title="Kalau jaringan pelaksana di lapangan tidak stabil / di balik NAT operator seluler, video bisa gagal connect atau putus-putus">⚠️ Tergantung sinyal lapangan</span>
+          </div>
+        </div>
+        <span class="tag tag-green" style="font-size:11px;padding:5px 12px">● LIVE</span>
+      </div>
+      <div id="liveGridEmpty" style="text-align:center;color:var(--text-muted);padding:60px 20px;font-size:13px">
+        Belum ada pelaksana yang sedang Live saat ini.<br>
+        <span style="font-size:11.5px">Video akan otomatis muncul di sini begitu pelaksana menekan tombol "Mulai Live" dari HP-nya.</span>
+      </div>
+      <div id="liveGrid" style="margin-top:14px;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px;"></div>
     </div>
 
     <!-- ══ ABSENSI VIEW ══ -->
@@ -3601,11 +3625,11 @@ window.dbvExportCsv = function() {
 
 function switchView(view) {
   lepaskanListenerTidakAktif(view);
-  const allViews = ['viewBeranda','viewMap','viewTable','viewPetugas','viewAbsensi','viewLogAbsensi','viewLaporan','viewTiket','viewVerifikasi','viewHasilVerifikasi','viewRiwayatInspeksi','viewRekap','viewAkun','viewAkunUsher','viewDbViewer'];
+  const allViews = ['viewBeranda','viewMap','viewTable','viewPetugas','viewLive','viewAbsensi','viewLogAbsensi','viewLaporan','viewTiket','viewVerifikasi','viewHasilVerifikasi','viewRiwayatInspeksi','viewRekap','viewAkun','viewAkunUsher','viewDbViewer'];
   allViews.forEach(id => { const el = document.getElementById(id); if(el) el.style.display = 'none'; });
   document.getElementById('filterBar').style.display = 'none';
 
-  const allNavIds = ['nav-beranda','nav-map','nav-table','nav-petugas','nav-absensi','nav-log-absensi','nav-laporan','nav-tiket','nav-verifikasi','nav-hasil-verifikasi','nav-riwayat-inspeksi','nav-rekap','nav-akun','nav-akun-usher','nav-db-viewer'];
+  const allNavIds = ['nav-beranda','nav-map','nav-table','nav-petugas','nav-live','nav-absensi','nav-log-absensi','nav-laporan','nav-tiket','nav-verifikasi','nav-hasil-verifikasi','nav-riwayat-inspeksi','nav-rekap','nav-akun','nav-akun-usher','nav-db-viewer'];
   allNavIds.forEach(id => { const el = document.getElementById(id); if(el) el.classList.remove('active'); });
 
   // Tiap kali pindah/masuk (lagi) ke suatu halaman, scroll selalu dikembalikan
@@ -3641,6 +3665,11 @@ function switchView(view) {
       listenPetugas();
       listenLaporanCheckpoints();
     });
+  } else if (view === 'live') {
+    if (!isSuperadmin()) { showToast('Live Video Pelaksana hanya bisa diakses oleh akun UP3.', 'warn'); switchView('beranda'); return; }
+    document.getElementById('viewLive').style.display = '';
+    document.getElementById('nav-live').classList.add('active');
+    initFirebase().then(ok => { if (ok) listenLive(); });
   } else if (view === 'absensi') {
     document.getElementById('viewAbsensi').style.display = '';
     document.getElementById('nav-absensi').classList.add('active');
@@ -3896,6 +3925,7 @@ const LISTENER_VIEW_MAP = {
   petugas:           ['petugas'],
   laporanCheckpoint: ['petugas'],
   absensi:           ['absensi'],
+  live:              ['live'],
   tiket:             ['beranda', 'tiket']
 };
 
@@ -3969,6 +3999,13 @@ function applyAdminUI() {
   // lain tidak boleh bisa mengubah/lihat password & PIN akun lain.
   document.getElementById('nav-akun-usher').style.display = (isAdminMode && isSuperadmin()) ? '' : 'none';
   document.getElementById('nav-db-viewer').style.display = (isAdminMode && isSuperadmin()) ? '' : 'none';
+  // Live Video Pelaksana: khusus akun UP3 (superadmin), TIDAK perlu Mode Admin
+  // aktif dulu — ini fitur monitoring/lihat saja, bukan fitur hapus/edit data,
+  // jadi cukup gerbang login role-nya saja (beda dari nav-akun/db-viewer di atas).
+  document.getElementById('nav-live').style.display = isSuperadmin() ? '' : 'none';
+  if (!isSuperadmin() && document.getElementById('viewLive').style.display !== 'none') {
+    switchView('beranda');
+  }
   if (!isAdminMode && (document.getElementById('viewAkun').style.display !== 'none' || document.getElementById('viewAkunUsher').style.display !== 'none' || document.getElementById('viewDbViewer').style.display !== 'none')) {
     switchView('beranda');
   }
@@ -4350,12 +4387,13 @@ async function initFirebase() {
   if (fbApp) return true;
   try {
     const { initializeApp } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
-    const { getDatabase, ref, onValue, remove, update, query, orderByChild, startAt, endAt, runTransaction, get } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
+    const { getDatabase, ref, onValue, remove, update, query, orderByChild, startAt, endAt, runTransaction, get, set, push, onChildAdded, onChildRemoved } = await import('https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js');
     fbApp = initializeApp(FB_CONFIG, 'tladmin');
     fbDb  = getDatabase(fbApp);
     window._fbRef = ref; window._fbOnValue = onValue; window._fbRemove = remove; window._fbUpdate = update;
     window._fbQuery = query; window._fbOrderByChild = orderByChild; window._fbStartAt = startAt; window._fbEndAt = endAt;
     window._fbRunTransaction = runTransaction; window._fbGet = get;
+    window._fbSet = set; window._fbPush = push; window._fbOnChildAdded = onChildAdded; window._fbOnChildRemoved = onChildRemoved;
     return true;
   } catch(e) {
     console.error('Firebase init gagal:', e);
@@ -5696,6 +5734,149 @@ function listenAbsensi() {
     document.getElementById('absensiCount').textContent = todayEntries.length + ' absen';
     renderAbsensiTable(todayEntries);
   });
+}
+
+// ══════════════════════════════════════
+// LIVE VIDEO PELAKSANA (khusus akun UP3/superadmin)
+// WebRTC 1-ke-banyak: tiap pelaksana yang Live jadi 1 "broadcaster", browser
+// UP3 ini jadi salah satu "viewer"-nya (bisa lebih dari 1 admin nonton
+// bersamaan, tiap admin punya koneksi P2P sendiri ke HP pelaksana). Firebase
+// Realtime Database dipakai HANYA untuk tukar sinyal (SDP + ICE candidate),
+// bukan untuk lewatkan video itu sendiri — video mengalir langsung P2P.
+// Catatan penting: cuma pakai STUN publik (gratis), TIDAK ada TURN server.
+// Kalau HP pelaksana ada di balik NAT operator seluler yang ketat, koneksi
+// bisa gagal connect sama sekali — itu wajar untuk P2P WebRTC tanpa TURN,
+// bukan bug. Kalau ini jadi masalah rutin di lapangan, perlu tambah TURN
+// server (biasanya berbayar) di LIVE_ICE_SERVERS di bawah.
+// ══════════════════════════════════════
+const LIVE_ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+const liveViewerId = 'up3_' + Math.random().toString(36).slice(2, 10) + '_' + Date.now();
+let liveConns = {};          // petugasId -> { pc, unsubOffer, unsubCandidate, signalBase }
+let liveKnownSessions = {};  // petugasId -> true, sesi yang sedang kita render/connect
+
+function listenLive() {
+  if (fbListeners.live) return;
+  document.getElementById('liveGrid').innerHTML = '';
+  liveConns = {};
+  liveKnownSessions = {};
+  updateLiveEmptyState();
+
+  const r = window._fbRef(fbDb, 'liveSessions');
+  const unsubValue = window._fbOnValue(r, snap => {
+    const data = snap.val() || {};
+    const activeIds = Object.keys(data).filter(id => data[id] && data[id].active);
+
+    activeIds.forEach(id => {
+      if (!liveKnownSessions[id]) {
+        liveKnownSessions[id] = true;
+        connectLiveSession(id, data[id]);
+      }
+    });
+    Object.keys(liveKnownSessions).forEach(id => {
+      if (!activeIds.includes(id)) {
+        delete liveKnownSessions[id];
+        disconnectLiveSession(id);
+      }
+    });
+
+    const badge = document.getElementById('nav-badge-live');
+    badge.style.display = activeIds.length ? '' : 'none';
+    badge.textContent = activeIds.length;
+    updateLiveEmptyState();
+  });
+
+  // fbListeners.live dipanggil sebagai "unsubscribe" oleh lepaskanListenerTidakAktif()
+  // saat pindah dari tab Live, jadi sekalian putuskan semua koneksi video +
+  // bersihkan node sinyal milik viewer ini supaya tidak menumpuk di Firebase.
+  fbListeners.live = () => { unsubValue(); disconnectAllLive(); };
+}
+
+function updateLiveEmptyState() {
+  const grid = document.getElementById('liveGrid');
+  const empty = document.getElementById('liveGridEmpty');
+  if (grid && empty) empty.style.display = grid.children.length ? 'none' : '';
+}
+
+function connectLiveSession(petugasId, meta) {
+  const tile = document.createElement('div');
+  tile.id = 'liveTile_' + petugasId;
+  tile.style.cssText = 'background:var(--ink-900);border-radius:var(--radius);overflow:hidden;position:relative;box-shadow:var(--shadow-sm);aspect-ratio:16/9;';
+  tile.innerHTML = `
+    <video id="liveVideo_${petugasId}" autoplay playsinline style="width:100%;height:100%;object-fit:cover;background:#000"></video>
+    <div style="position:absolute;top:8px;left:8px;background:rgba(220,53,69,0.92);color:#fff;font-size:10.5px;font-weight:700;padding:3px 8px;border-radius:99px;display:flex;align-items:center;gap:5px;">
+      <span style="width:6px;height:6px;border-radius:50%;background:#fff;animation:pulse-live 1.4s infinite"></span>LIVE
+    </div>
+    <div style="position:absolute;bottom:0;left:0;right:0;padding:9px 10px 8px;background:linear-gradient(0deg,rgba(0,0,0,0.78),transparent);color:#fff;">
+      <div style="font-size:12.5px;font-weight:700">${esc(meta.namaPetugas || meta.regu || 'Pelaksana')}</div>
+      <div style="font-size:10.5px;font-weight:500;opacity:0.85">${esc(meta.regu || '')}${meta.ulp ? ' · ' + esc(meta.ulp) : ''}</div>
+    </div>
+    <div id="liveStatus_${petugasId}" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.75);font-size:12px;background:rgba(0,0,0,0.4);text-align:center;padding:12px;">Menghubungkan...</div>
+  `;
+  document.getElementById('liveGrid').appendChild(tile);
+  updateLiveEmptyState();
+
+  const pc = new RTCPeerConnection({ iceServers: LIVE_ICE_SERVERS });
+  const signalBase = 'liveSignal/' + petugasId + '/' + liveViewerId;
+
+  pc.ontrack = (ev) => {
+    const videoEl = document.getElementById('liveVideo_' + petugasId);
+    if (videoEl) videoEl.srcObject = ev.streams[0];
+    const statusEl = document.getElementById('liveStatus_' + petugasId);
+    if (statusEl) statusEl.style.display = 'none';
+  };
+  pc.onconnectionstatechange = () => {
+    const statusEl = document.getElementById('liveStatus_' + petugasId);
+    if (!statusEl) return;
+    if (pc.connectionState === 'failed' || pc.connectionState === 'disconnected') {
+      statusEl.style.display = '';
+      statusEl.textContent = 'Koneksi terputus / sinyal pelaksana lemah';
+    }
+  };
+  pc.onicecandidate = (ev) => {
+    if (ev.candidate) window._fbPush(window._fbRef(fbDb, signalBase + '/candViewer'), ev.candidate.toJSON());
+  };
+
+  // Beri tahu HP pelaksana bahwa viewer ini mau nonton
+  window._fbSet(window._fbRef(fbDb, signalBase + '/join'), true);
+
+  // Tunggu offer dari HP pelaksana, lalu balas dengan answer
+  const unsubOffer = window._fbOnValue(window._fbRef(fbDb, signalBase + '/offer'), async snap => {
+    const offer = snap.val();
+    if (!offer || pc.currentRemoteDescription) return;
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      const answer = await pc.createAnswer();
+      await pc.setLocalDescription(answer);
+      window._fbSet(window._fbRef(fbDb, signalBase + '/answer'), { type: answer.type, sdp: answer.sdp });
+    } catch (e) { console.error('Live: gagal proses offer dari ' + petugasId, e); }
+  });
+
+  const unsubCandidate = window._fbOnChildAdded(window._fbRef(fbDb, signalBase + '/candBroadcaster'), snap => {
+    const c = snap.val();
+    if (c) pc.addIceCandidate(new RTCIceCandidate(c)).catch(() => {});
+  });
+
+  liveConns[petugasId] = { pc, unsubOffer, unsubCandidate, signalBase };
+}
+
+function disconnectLiveSession(petugasId) {
+  const conn = liveConns[petugasId];
+  if (conn) {
+    try { conn.unsubOffer && conn.unsubOffer(); } catch (e) {}
+    try { conn.unsubCandidate && conn.unsubCandidate(); } catch (e) {}
+    try { conn.pc.close(); } catch (e) {}
+    try { window._fbRemove(window._fbRef(fbDb, conn.signalBase)); } catch (e) {}
+    delete liveConns[petugasId];
+  }
+  const tile = document.getElementById('liveTile_' + petugasId);
+  if (tile) tile.remove();
+  updateLiveEmptyState();
+}
+
+function disconnectAllLive() {
+  Object.keys(liveConns).forEach(disconnectLiveSession);
+  liveKnownSessions = {};
+  updateLiveEmptyState();
 }
 
 // ══════════════════════════════════════
